@@ -1,5 +1,4 @@
 % run_PHT3D_1Dprofile_quickstart.m
-% (starting point: run_PHT3D_1Dprofile_quickstart3_ForNextTime_test.m)
 %
 % 11/3/15
 %
@@ -8,7 +7,7 @@
 % Sets up model by custom-creating the following input files:
 %   1) *nam: namelist file 
 %   2) *_ph.dat: PHREEQC interface package file (to link PHT3D to PHREEQC)
-%   3) postfix: additional PHREEQC optiocecns 
+%   3) postfix: additional PHREEQC options 
 % (the following files 4)-8) are MT3DMS input file formats)
 %   4) *btn: basic transport package file
 %   5) *ssm: source/sink mixing package file (not geochem reactiions, 
@@ -19,17 +18,13 @@
 %   8) *gcg: GCG solver package file (iterative scheme to address stability
 %      problems due to time step)
 %
-% _Orgcsource (3/31/16): adds another immobile component that is source
-%   that continuously replenishes Orgcsed.  For steady-state:
-% _dike (4/1/16): No Orgcsed in dike
-%
 % Assumes pht3d_databas.dat (geochem database) file already exists; specify
 % in 'use_file_databas'.
 %       
 %
 % Uses the following functions:
 %   - SC_InitCond_chem_2()
-%       Specifies observed conc, equilibrates with PHREEQC
+%       SpecifiesOr observed conc, equilibrates with PHREEQC
 %   - Alk2DIC()
 %       Called by SC_InitCond_chem(), converts alkalinity to total C(4)
 %   - generate_ic_PHREEQC_f_062215a()
@@ -37,21 +32,31 @@
 %          PHREEQC
 %   - go_PHREEQC2_4()
 %       Called by generate_ic_PHREEQC_f_062215a(), runs PHREEQC
-%   - PHT3D_ph_f_general4()
+%   - PHT3D_ph_f_general5()
 %       Creates pht3d_ph.dat
 %   - PHT3D_btn_f_051715a()
 %       Creates btn, dsp, ssm files using the specified inputs
 %
+% run_PHT3D_1Dprofile_quickstart_v2: includes As as redox species
+% run_PHT3D_1Dprofile_quickstart_v3: includes As sorption
+% run_PHT3D_1Dprofile_quickstart_v4: includes temperature-controlled Orgc degradation
+
 
 clear all, close all; fclose all;
 
-% ============================
-% SECTION 1: INPUTS
-% ============================
+a = clock;
+if a(5) < 10
+    fprintf('\n\nStart time: (%d/%d/%d) %d:0%d\n', a(2), a(3), a(1), a(4), a(5));
+else
+    fprintf('\n\nStart time: (%d/%d/%d) %d:%d\n', a(2), a(3), a(1), a(4), a(5));
+end
 
-% 1A) DIRECTORY AND FILE NAMES
 
-fl_gcng = 0;  % 1: Crystal, 0: Patrick
+% **************** CUSTOMIZE TO YOUR COMPUTER!! ***************************
+% Make sure to set the following: 
+%   matlab_dir, PHT3D_exe, phrq_exe, sim_dir, flo_file, use_file_databas
+
+fl_gcng = 0;  % 1: Crystal, 0: Aubrey
 
 % ********** CUSTOMIZE FILE NAMES TO YOUR COMPUTER!! **********************
 % Make sure to set the following: 
@@ -72,91 +77,124 @@ if fl_gcng
     phrq_exe = '/home/gcng/workspace/Models/PHREEQC/phreeqc-3.1.7-9213/bin/phreeqc';
 
     % - sim_dir: Directory with input files and where you run simulations
-    sim_dir = '/home/gcng/workspace/ModelRuns_scratch/PHT3D_projects/Minntac/test1/';
+    sim_dir = '/home/gcng/workspace/ModelRuns_scratch/PHT3D_projects/CapeCod/Arsenic/test1_c2/';
 
     % - flo_file: MODFLOW flo simulation file (full path)
 %     flo_file = 'C:\Hydro_Modeling\MINNTAC_MATLAB_FILES\test2_1D_3\test.flo'; % 2D, no recharge
-    flo_file = '/home/gcng/workspace/ModelRuns_scratch/MODFLOW_projects/Minntac/test3/test2_1D_3/test_MW12.flo';
-    fl_rech = 1;  % 1: for recharge, 0 for no recharge in the MODFLOW simulation
+%     flo_file = '/home/gcng/workspace/ModelRuns_scratch/MODFLOW_projects/ESCI5980/Asst6_oppdir/test.flo';
+    flo_file = '/home/gcng/workspace/ModelRuns_scratch/MODFLOW_projects/CapeCod/Arsenic/test_1D_1/test_AJD_AsMN_50m_200lay_downwardflux.flo';    
+%     fl_rech = 1;  % 1: for recharge, 0 for no recharge in the MODFLOW simulation
 
     % - use_file_databas: geochem database, this is copied into 'pht3d_datab.dat' in sim_dir for simulation
 %     use_file_databas = '/home/gcng/Documents/Teaching/ESCI5980_HydModeling/Fall2015/Lectures/L16_PHT3D_2/PHT3D_files/pht3d_datab.dat';
-    use_file_databas = '/home/gcng/workspace/ProjectFiles/DNR_sulfate/PHT3D_files/database_files/pht3d_datab.dat_160331';
+    use_file_databas = '/home/gcng/workspace/ProjectFiles/CapeCod/arsenic/database_files/pht3d_datab_As_160606_AJDedits_gcng.txt';
     % ************ (end of computer-specific file specifications) *************
-else    
+else
+        % - choose one of these
+    %slashstr = '/'; % for Linux or Windows/Cygwin
+    slashstr = '\'; % for Windows/MS-DOS 
+    
     % - matlab_dir: directory with matlab functions 
-    % matlab_dir = '.';  % use '.' if all your functions and scripts in the same directory
-    matlab_dir = 'C:\Hydro_Modeling\PHT3D_files\';  
-
-    % - choose one of these
-    slashstr = '/'; % for Linux or Windows/Cygwin
-    % slashstr = '\'; % for Windows/MS-DOS 
+    matlab_dir = pwd;  % current directory
 
     % - Full path PHT3D executable
-    PHT3D_exe = '/cygdrive/c/Hydro_Modeling/pht3dv210/bin/pht3dv210.exe';
+    PHT3D_exe = 'C:\pht3dv210\bin\pht3dv210';
 
     % - Full path PHREEQC executable
-    phrq_exe = 'C:\Hydro_Modeling\phreeqc';
+    phrq_exe = 'C:\USGS\phreeqc-3.3.7-11094-x64\bin\phreeqc';
 
     % - sim_dir: Directory with input files and where you run simulations
-    sim_dir = 'C:\Hydro_Modeling\GW003_pht3d_dir\';
+    sim_dir = 'C:\Users\Owner\Desktop\Arsenic_MN\Arsenic_MN_Project\OTT3_Model\OTT3_Test_Models\Test_Model_03142017\';
 
     % - flo_file: MODFLOW flo simulation file (full path)
-    % flo_file = '/home/gcng/workspace/ModelRuns_scratch/MODFLOW_projects/ESCI5980/test2_1D_3/test.flo';
-    flo_file = 'C:\Hydro_Modeling\MINNTAC_MATLAB_FILES\GW003_MODFLOW_dir\test.flo'; % 2D, no recharge
-    % flo_file = '/home/gcng/workspace/ModelRuns_scratch/MODFLOW_projects/ESCI5980/Asst5_3/test.flo'; % 2D, w/ recharge
-    fl_rech = 1;  % 1: for recharge, 0 for no recharge in the MODFLOW simulation
+    flo_file = 'C:\Users\Owner\Desktop\Arsenic_MN\Arsenic_MN_Project\OTT3_Model\OTT3_Test_Models\Test_Model_03142017\test_100m_200lay_noflow.flo';
 
-    % - use_file_databas: geochem database, this is copied into 'pht3d_datab.dat' in sim_dir for simulation
-    use_file_databas = 'C:\Hydro_Modeling\pht3d_dir\pht3d_datab.dat';
-    % ************ (end of computer-specific file specifications) *************
+    % - use_file_databas: geochem database, this is ultimately copied into 
+    %   'pht3d_datab.dat' in sim_dir for simulation
+    use_file_databas = 'C:\Users\Owner\Desktop\Arsenic_MN\Arsenic_MN_Project\OTT3_Model\OTT3_Test_Models\Test_Model_03142017\pht3d_datab_As_03062017_OTT3.dat';
+    % ************* (end to CUSTOMIZE TO YOUR COMPUTER!!) *********************
 end
 
-% - Name file will contain names of all input files, including MODFLOW flo file, 
+% - This will contain names of all input files, including MODFLOW flo file, 
 %   Many files depend on resolution; 'suffix' is for names of resolution-
 %   dependent files (btn, dsp, ssm)
-nam_fil = 'pht3d_2D.nam';
-suffix = '2D';  % suffix to file names
+nam_fil = 'pht3d_1D.nam';
+suffix = '1D';  % suffix to file names
 
+%fl_NoChargeBal = 1; % will always do charge balance for first initialization
 
-% 1B) (*DO NOT CHANGE*: SET UP A TIMER AND SOME OTHER FILE ADMINISTRATION)
-a = clock;
-if a(5) < 10
-    fprintf('\n\nStart time: (%d/%d/%d) %d:0%d\n', a(2), a(3), a(1), a(4), a(5));
-else
-    fprintf('\n\nStart time: (%d/%d/%d) %d:%d\n', a(2), a(3), a(1), a(4), a(5));
-end
-addpath(matlab_dir);
+% -- other entries for _ph, btn files
 
+ctr=0;
+fl_ReDo = 0;
 
-% 1C) SET TIME PARAMETERS
-% timprs = [0:30:1800]; % print out times [Start Time:Increment:End Time] [d]
-% timprs = [0,1,365:365:365*6]; % print out times [d]
-timprs = [0:365/10:365*12]; % print out times [d]
-nstp = 20;  % number of time steps, incr for better numerical performance, decr for faster simulations
+% end_ctr = 15; % any number, can loop thru tempC_v
+end_ctr = 1; % any number, can loop thru tempC_v
 
+OperSplit = 3; % 2 for reaction step every user-specified time step, 
+%       3 for reaction every system-determined transport step (all runs
+%       previous to 160920 were OperSplit=2, hard-coded in
+%       PHT3D_ph_f_general5
 
-% 1D) PHYSICAL INPUTS AND PARAMETERS 
+ while(1)
+    ctr=ctr+1;
+    if fl_ReDo
+        % redo with different charge balance, don't advance ctr
+        ctr=ctr-1;
+    end
 
-% -- Domain info 
-nlay = 75;
-ncol = 150;   
-nrow = 1;
-domain_bot_elev = -27.2; % m
-domain_top_elev = 0; % top of domain must be at least this elev (include extra space for WT mov't)
-domain_len = 224; % [m]
+% %Two year binary temperature model.    
+tempC_kin_v = [10 10 10 10];  % for kinetics
+% tempC_kin_v = [25 25 2 25];  % for kinetics
+% tempC_kin_v = [25];  % for kinetics
+tempC_eq_v = [10];  % for equil
 
-y_scale = 200/nlay; %ratio set by initial harcoded discretization of 200 rows by 400 columns
-x_scale = 400/ncol; %ratio set by initial harcoded discretization of 200 rows by 400 columns
+%     tempC=tempC_v(ctr);
 
+%One year month-dependent temperature model
+%     tempC_v = [2; 4; 5; 7; 10; 15; 20; 25; 23; 19; 13; 8];
+% 
+%     tempC=tempC_v(ctr);
 
-% -- General properties
-tempC = 9.14; % water temperature, geochem rxs are temp-sensitive
-por = 0.35;   % porosity
+    tempC_eq=tempC_eq_v(mod(ctr-1,length(tempC_eq_v))+1);
+    tempC_kin=tempC_kin_v(mod(ctr-1,length(tempC_kin_v))+1);
+    fprintf('ctr=%d, tempC_eq=%g, tempC_kin=%g\n', ctr, tempC_eq, tempC_kin);
 
+    units = 'mol/kgw';
 
+    if ctr == 1
+%         timprs=[0 1 30 60 90 120 150 180 210 240 270 300 330 365*[100:2000:20000]];
+%         timprs=[0 1 30 60 90 120 150 180 210 240 270 300 330 365*[100:1500:15000]];
+%         timprs=[0 1 30 60 90 120 150 180 210 240 270 300 330 365*[100:1000:10000]];
+%         timprs=[0 1 30 60 90 120 150 180 210 240 270 300 330 365*[100:100:2000]];
+%         timprs=[0 1 30 60 90 120 150 180 210 240 270 300 330 365*[100:100:1000]];
+        timprs=[0 1 365*1 365*[100:100:1000]];
+%         timprs=[0 1 30 60 90 120 150 180 210 240 270 300 330 365*[1:100]];
+%         timprs=[0 1 30 60 90 120 150 180 210 240 270 300 330 365*[1:5]];
+%         timprs=[0 1 30 60 90 120 150 180 210 240 270 300 330 365];
+%         timprs=[1 91.25 182.5];
+%          timprs=[0 1 30 60 90];
+    else
+%         timprs=[0 30 60 90 120 150 180];
+        timprs=[91.25 182.5];
+    end
+        
+    %timprs_v=[0:179; 180:359; 360:539; 540:719];
+    %timprs_v=[0:29; 30:59; 60:89; 90:119; 120:149; 150:179; 180:209; 210:239; 240:269; 270:299; 300:329; 330:359];
+    %timprs_v=[0 29; 30 59; 60 89; 90 119; 120 149; 150 179; 180 209; 210 239; 240 269; 270 299; 300 329; 330 359];
+    
+%         timprs=timprs_v(ctr,1:end); 
 
-% -- Dispersion 
+%timprs = [0 1 90 180 365 365*[2:10]]; % print out times [d]
+%timprs = [0: 1 : 30]; % print out times [d]
+% nstp = round(2/180*timprs(end));  % number of steps = steps per 182.5 days times total number of days in run
+nstp = 50;
+% nstp = round(10/180*timprs(end));  % often used 50 for longer runs, 10 is faster
+por = 0.20;   % porosity, 0.39 assumed in Smith et al. 2013
+rho_b = 2650; % g/L (bulk density), 1864g/L from Smith et al. 2013
+pe_value = 12;
+
+fl_Yexch = 1; % 1 to include Y cation exchanger
 
 % - Calculate molecular diffusion coefficient
 
@@ -186,139 +224,124 @@ Dstar = Tstar*D;
 %   Zheng textbook: Fig. 11.3 p. 303: alphaL vs. scale, mostly alphaL: 1e-2 
 %       to 1e2 m, alphaL = 1e-2 m is for 1 m scale (this is similar to lab
 %       column values)
+ %long_disp = 1e-2;  % m
 long_disp = 1;  % m
 hor2longdisp = 0.018; % ratio horiz transverse disp / long dispersivity (Garabedian: 0.018 m)
 vert2longdisp = 0.0015; % ratio vertical transverse disp / long dispersivity (Garabedian: 0.0015 m)
+hivert2longdisp = 0.015; % ratio vertical transverse disp / long dispersivity (Garabedian: 0.0015 m), used to create impression of increased flux in aquifer
 
 
-% 1E) SET UP ORGANIC CARBON INPUTS, KINETIC MODEL THAT CONTROLS REDOX RXNS
+% Domain info ------------------------------------------------------------
+% - Domain parameters (for ba6, dis)
+nlay = 200;
+% nlay = 100;
+% nlay = 50;
+ncol = 1;   
+nrow = 1;
+% domain_len = 50; % meters
+domain_bot_elev = -100; % meters
+domain_top_elev = 0; % top of domain must be at least this elev (include extra space for WT mov't)
+% DELR = domain_len / ncol;  DELC = DELR; % discretization for 2D profile
+% dz = repmat((domain_top_elev - domain_bot_elev)/nlay, nlay, 1);
+DELR = 100;  DELC = 100; % arbitrary for 1D profile
+dz = repmat((domain_top_elev - domain_bot_elev)/nlay, nlay, 1);
 
-% Set parameters for degradable organic carbon (Orgcsed)
-% ** Modify to control kinetic rate of redox reactions
-% Current model: 1st order decay relative to Orgcsed concentration; faster rate for aerobic degradation
 
-% - set Orgsed ic conc [mol/g]
-Orgcsed_conc_ic = 0.00066;  % [mol/Lw] * por / rho_b = [mol/g] * current value: arbitrary!!!
+% -- various flags
+fl_setup_only = 0;  % 0: to directly run simulation from this matlab script
 
-% - kinetic parameters (we're assuming 1st order decay)
-% (increase logK for faster decay)
-% Orgcsed_log10K = log10([1e5, 0.075e-6]);  % rate-limiting, 1. aerobic, 2. anaerobic (orig)
-%Orgcsed_log10K = log10([0.075e-6, 0.075e-7]);  % rate-limiting, 1. aerobic, 2. anaerobic 
-Orgcsed_log10K = log10([0.1e-6, 0.075e-6]);  % rate-limiting, 1. aerobic, 2. anaerobic 
 
-% - set Orgcsource to replenish Orgcsed (Orgcsed is what actually degrades)
-fl_Orgcsource = 1; % 0: ignore all parts related to Orgcsource
-if fl_Orgcsource
-    % - set Orgcsource ic conc [mol/g] 
-    Orgcsource_conc_ic = Orgcsed_conc_ic * 10000;  % an amount that won't run out
+%% Orgcsed-----------------------------------------------------------------
 
-    % - kinetic parameters (we're assuming 1st order decay), use same params as
-    % Orcsed for steady-state replenishment
-    % (increase logK for faster decay)
-    Orgcsource_log10K = Orgcsed_log10K;  % rate-limiting, 1. aerobic, 2. anaerobic 
+% for i=length(ctr)
+%     if ctr==1
+
+% -- set high limit for Orgsed ic conc (zone 2) [mol/g]
+% hi_Orgcsed = 0.3*por/rho_b;  % [mol/Lw] * por / rho_b = [mol/g]
+%hi_Orgcsed = 0.1*por/rho_b;  % [mol/Lw] * por / rho_b = [mol/g]
+% hi_Orgcsed = 0.03*por/rho_b;  % [mol/Lw] * por / rho_b = [mol/g]
+hi_Orgcsed = 0.01*por/rho_b;  % [mol/Lw] * por / rho_b = [mol/g]
+% - kinetic parameters
+Orgcsed_log10K = log10([1e3, 0.075e-8]);  % rate-limiting, 1. aerobic, 2. anaerobic 
+
+%% Orgc--------------------------------------------------------------------
+
+% -- set high limit for Orgsed ic conc (zone 2) [mol/g]
+% hi_Orgc = 0.3;  % [mol/Lw]
+% hi_Orgc = 0.1;  % [mol/Lw]
+hi_Orgc = 0.03;  % [mol/Lw]
+% hi_Orgc = 0;  % [mol/Lw]
+% - kinetic parameters
+Orgc_log10K = log10([5e-4, 4e-9]);  % rate-limiting, 1. aerobic, 2. anaerobic (starting point is Cape Cod reoxy model)
+% - temperature-dependency parameters for: lnk = m*(1/T_K) + b, (T in K, k in s-1)
+% (Arrhenius model, based on conversation with Doug 6/1/16)
+% Set these params:
+Pt1_T_k_Aer = [9+273.15; 0.016/3600]; % T [K], 1st order k_Aer [1/s] (point 1)
+dT_mult_Aer = [10; 2];  % dT [K], multiply rate [-] (to get aerobic point 2)
+An_Aer_ratio_9degC = 1e-6;  % k_An / k_Aer at 9degC (to get anaerobic point 1)
+dT_mult_An = [10; 5];  % dT [degK], multiply rate [-] (to get anaerobic point 2)
+
+% do not change below:
+Pt2_T_k_Aer = [Pt1_T_k_Aer(1)+dT_mult_Aer(1); Pt1_T_k_Aer(2)*dT_mult_Aer(2)]; % T [K], 1st order k_Aer [1/s] (point 2)
+Pt1_T_k_An = [Pt1_T_k_Aer(1); Pt1_T_k_Aer(2)*An_Aer_ratio_9degC]; % T [K], 1st order k_An [1/s] (point 1)
+Pt2_T_k_An = [Pt1_T_k_An(1)+dT_mult_An(1); Pt1_T_k_An(2)*dT_mult_An(2)]; % T [K], 1st order k_An [1/s] (point 2)
+for ii = 1:2 % loop thru Aerobic, Anaerobic
+    if ii == 1
+        Pt1_T_k = Pt1_T_k_Aer;
+        Pt2_T_k = Pt2_T_k_Aer;
+    else
+        Pt1_T_k = Pt1_T_k_An;
+        Pt2_T_k = Pt2_T_k_An;
+    end
+    Pt1 = [1/Pt1_T_k(1), log10(Pt1_T_k(2))];
+    Pt2 = [1/Pt2_T_k(1), log10(Pt2_T_k(2))];
+    m = (Pt2(2)-Pt1(2)) / (Pt2(1)-Pt1(1));  % slope for: lnk = m*(1/T_K) + b
+    b = -m*Pt1(1) + Pt1(2);
+    if ii == 1
+        Orgc_Aer_m = m;
+        Orgc_Aer_b = b;
+    else
+        Orgc_An_m = m;
+        Orgc_An_b = b;
+    end
 end
+Orgc_log10K = [Orgc_Aer_m*(1/(273.15+tempC_kin))+Orgc_Aer_b, Orgc_An_m*(1/(273.15+tempC_kin))+Orgc_An_b];  % rate-limiting, 1. aerobic, 2. anaerobic (starting point is Cape Cod reoxy model)
 
-% 1F) SET UP GEOCHEMICAL INITIAL AND BOUNDARY CONDITIONS
-% ***NOTE: Most of i.c. and b.c. should be set in function: Minntac_InitCond_chem.m ***
+%     end
+% end
 
-% -- Generate equilibrated and charge-balanced solutions based on observations:
-% (nrow,ncol,nlay,n_comp)
-[mob_eq_comp, mob_eq_ic_z, mob_eq_extra_z, min_eq_comp, min_eq_ic_z, catex_comp, catex_ic_z, ...
-    surf_comp, surf_ic_z, surf_par, surf_cpl, surf_calc_type] = ...
-    GW003_Minntac_InitCond_chem_red_wFeS(sim_dir, phrq_exe, use_file_databas, por, tempC);
-if isempty(mob_eq_comp)
-    fprintf('Minntac_InitCond_chem did not return valid results, exiting... \n')
-    return
-end
-
-% -- Most likely no need to change this block: 
-% Initialize arrays for initial conditions, boundary conditions will 
-% automatically be set to the initial conditions in the corresponding grid cells
-n_mob_eq = length(mob_eq_comp);
-n_min_eq = length(min_eq_comp);
-n_catex = length(catex_comp);
-n_surf = length(surf_comp);
-mob_eq_ic = zeros(nrow,ncol,nlay,n_mob_eq); % mobile equil components
-mob_eq_extra = cell(n_mob_eq,1); % to specify charge-balance component
-min_eq_ic = zeros(nrow,ncol,nlay,n_min_eq); % mineral equil components 
-fl_mob_eq_const_rech = zeros(n_mob_eq,1); % default: apply constant concentration in recharge over space 
-mob_eq_const_rech = zeros(n_mob_eq,1); % to specify space-constant concentration in recharge   
-mob_eq_distr_rech = zeros(nrow,ncol,n_mob_eq); % to specify distributed concentration in recharge over space
-catex_ic = zeros(nrow,ncol,nlay,n_catex); 
-surf_ic = zeros(nrow,ncol,nlay,n_surf); 
-
-% -- *** Set initial conditions here according the the various equilibrated
-% and charge-balanced solutions (different "zones") from
-% Minntac_InitCond_chem() function ***
-for ii = 1: n_mob_eq
-    % Rest of domain
-    mob_eq_ic(:,:,1:end,ii) = mob_eq_ic_z(2,ii); 
-    mob_eq_extra(ii) = mob_eq_extra_z(2,ii); 
-    
-    % Cell 2 boundary
-    mob_eq_ic(:,1,:,ii) = mob_eq_ic_z(1,ii); % cell 2 
-    
-    % recharge 
-    mob_eq_const_rech(ii) = mob_eq_ic_z(3,ii); % spatially constant
-    mob_eq_distr_rech(:,:,ii) = mob_eq_ic_z(3,ii); % spatially distributed
-    mob_eq_distr_rech(1,1:(400/x_scale),ii) = mob_eq_ic_z(4,ii); % recharge concentration thru perimeter dike
-end
-for ii = 1: n_min_eq
-    % Rest of domain
-    min_eq_ic(:,:,1:end,ii) = min_eq_ic_z(2,ii);     
-
-    % Cell 2
-    min_eq_ic(:,1,:,ii) = min_eq_ic_z(1,ii); % cell 2 
-end
-for ii = 1: n_catex
-    % Rest of domain
-    catex_ic(:,:,:,ii) = catex_ic_z(2,ii); 
-end
-for ii = 1: n_surf
-    % Rest of domain
-    surf_ic(:,:,:,ii) = surf_ic_z(2,ii); 
-end
-
-%==================================================
-% RECHARGE CONCENTRATIONS: SULFATE & CHLORIDE (mg/L)
-%==================================================
-ind_sulfate = find(strcmp(mob_eq_comp, 'S(6)'));
-ind_DO = find(strcmp(mob_eq_comp, 'O(0)'));
-% mob_eq_distr_rech(1,1:(216/x_scale),ind_sulfate) = 10 % recharge concentration of Sulfate from perimeter dike
-% mob_eq_distr_rech(1,1:(216/x_scale),ind_sulfate) = mob_eq_ic_z(3,ind_sulfate); % recharge concentration of Sulfate from perimeter dike
-%mob_eq_distr_rech(1,(216/x_scale):(400/x_scale),11) = 0 % recharge concetrations of Sulfate from natural land surface
-%mob_eq_distr_rech(1,1:(216/x_scale),3) = 0 % recharge concentrations of Cl from perimeter dike
-%mob_eq_distr_rech(1,(216/x_scale):(400/x_scale),3) = 0 % recharge concentrations of Cl from natural land surface
-
-% force anoxic
-mob_eq_ic(:,2:end,1:end,ii) = 0; % rest of domain (not Cell water)
-mob_eq_distr_rech(1,1:(240/x_scale),ind_DO) = 0; 
-
-
-% 1G) ADDITIONAL OUTPUT VARIABLES FOR 'SELECT' FILE, SET IN POSTFIX FILE
-% Default outputs will include most information, below block allows additional more detailed outputs 
+%% Pyrite------------------------------------------------------------------
+% 
+% %Example of KINETICS data block for pyrite rate:
+% %	KINETICS 1
+% %	Pyrite  
+% %		-tol    1e-8
+% %		-m0 	5.e-4
+% %		-m	5.e-4
+% %		-parms -5.0 	0.1 	.5 	-0.11
+% 
+% Pyrite_log10K = log10([1e-5, 1.2589, 3.1623, 0.7762]);  
+%% ------------------------------------------------------------------------
 % -- additional .sel output variables (other than input components)
-addl_sel_outlist.total = {'C(-4)'}; % total concentration [mol/Lw] of component of specified oxidation state
-addl_sel_outlist.mol = {}; % concentration [mol/Lw] of specified compound (e.g. HCO3- instead of total C(4))
-addl_sel_outlist.equilphase = {}; % concentration [mol/Lw] of specified equilibrium mineral or gas phase
-addl_sel_outlist.si = {}; % saturation index of specified mineral or gas phase
-addl_sel_outlist.gas = {}; % concentration [mol/Lw] of specified equilibrium gas phase
+addl_sel_outlist.total = {'C(-4)'};
+% addl_sel_outlist.mol = {'Hfo_wH2AsO4', 'Hfo_wHAsO4-', 'Hfo_wOHAsO4-3', 'Hfo_wH2AsO3', 'Hfo_sOFe+', 'Hfo_wOFe+', 'Hfo_wOFeOH', 'FeY2'};
+addl_sel_outlist.mol = {'Hfo_wH2AsO4', 'Hfo_wHAsO4-', 'Hfo_wOHAsO4-3', 'Hfo_wH2AsO3', 'Hfo_wH2PO4', 'Hfo_wHPO4-', 'Hfo_wPO4-2'};
+addl_sel_outlist.equilphase = {};
+addl_sel_outlist.si = {}; 
+addl_sel_outlist.gas = {}; 
+
+sel_file = 'out_X.sel';
+
+%% In general, do not change below...
 
 
-% 1H) MISCELLANEOUS INPUTS
-fl_setup_only = 1;  % 0: to directly run simulation from this matlab script
+%% -- Directory settings:
+% - Enter simulation files here:
+phrq_sim_dir = sim_dir;
 
 
+%% file names
 
-%% === In general, do not change below... =================================
-
-% ============================
-% SECTION 2: MODEL SET-UP
-% ============================
-
-% 2A) DIRECTORY AND FILE SETTINGS
-
-% - file names
 file_databas = [sim_dir, 'pht3d_datab.dat'];  % cannot change this name
 btn_file = [sim_dir, 'pht3dbtn_', suffix, '.dat'];
 ssm_file = [sim_dir, 'pht3dssm_', suffix, '.dat'];
@@ -329,125 +352,36 @@ ph_file = [sim_dir, 'pht3d_ph.dat'];
 adv_file = [sim_dir, slashstr, 'pht3dadv.dat'];
 gcg_file = [sim_dir, slashstr, 'pht3dgcg.dat'];
 
-% specify general output file name
+% to specify output file name
 out_file = [sim_dir, slashstr, 'pht3d.out'];
 
-% specify additional "select" output file, allows for extra detailed ouput information
-sel_file = 'out_X.sel';
 
+%% ----------------------------------------------------------------------
+% Generally don't need to change below here:
 
-% - go to simulation dir (check to make sure not over-writing, no current programs running)
+addpath(matlab_dir);
+
+% - go to simulation dir (check to make sure not over-writing, no current
+% programs running)
 if ~exist(sim_dir, 'dir')
     mkdir(sim_dir);
 end
-%if exist([sim_dir, slashstr, sel_file], 'file')    
-%    fprintf('sim_dir has .sel file(s)!  Could be job running or unsaved job there.  Exiting...\n');
-%    fprintf('(sim_dir %s) \n', sim_dir);
-%    return
-%end
+% if exist([sim_dir, slashstr, sel_file], 'file')    
+%     fprintf('sim_dir has .sel file(s)!  Could be job running or unsaved job there.  Exiting...\n');
+%     fprintf('(sim_dir %s) \n', sim_dir);
+%     return
+% end
 curr_dir = pwd;
 cd(sim_dir);
 addpath(curr_dir);
 
-% set database file (must be in sim_dir with file name 'pht3d_datab.dat')
 if ~strcmp(use_file_databas, file_databas)
     copyfile(use_file_databas, file_databas);
 end
 
-
-% 2B) DOMAIN PARAMETERS
 htop = domain_top_elev;
-DELC = domain_len / ncol; % thickness of column 
-DELR = DELC; % thickness of row (doesn't matter in x-section)
-dz = repmat((domain_top_elev - domain_bot_elev)/nlay, nlay, 1);
-
 
 n_par_max = 10; % max number kinetic parameters allowed
-
-
-% 2C) SET REMAINING VARIABLES FOR GEOCHEMISTRY INITIAL AND BOUNDARY CONDITIONS
-% (Units -- aq: mol/L_w, user-defined immob (e.g. bacteria, napl): mol/L_w, 
-% minerals (and gases?): mol/L_v, exchangers and surfaces: mol/L_v)
-
-% - mobile kinetic components 
-n_mob_kin_max = 10;
-mob_kin_comp = cell(n_mob_kin_max,1);
-mob_kin_ic = zeros(nrow,ncol,nlay,n_mob_kin_max);
-mob_kin_par = nan(n_par_max, n_mob_kin_max);
-mob_kin_formula = cell(n_mob_kin_max,1);
-ii = 0;
-n_mob_kin = ii;
-mob_kin_comp = mob_kin_comp(1:n_mob_kin);
-mob_kin_ic = mob_kin_ic(:,:,:,1:n_mob_kin); 
-
-% - mobile equil components
-% (already set in INPUT section)
-
-% - immobile kinetic componentscomponents
-n_imob_kin_max = 10;
-imob_kin_comp = cell(n_imob_kin_max,1);
-imob_kin_ic = zeros(nrow,ncol,nlay,n_imob_kin_max); 
-imob_kin_par = nan(n_par_max, n_mob_kin_max);
-imob_kin_formula = cell(n_mob_kin_max,1);
-ii = 0;
-% No Orgcsed in dike!!
-ii = ii+1; imob_kin_comp{ii} = 'Orgcsed'; % ********   
-imob_kin_par(1:length(Orgcsed_log10K),ii) = 10.^Orgcsed_log10K;
-imob_kin_ic(:,:,:,ii) = Orgcsed_conc_ic; 
-imob_kin_ic(:,1:round(160/x_scale),1:round(66/y_scale),ii) = 0;
-imob_kin_ic(:,round(160/x_scale):round(240/x_scale),1:round(88/y_scale),ii) = 0;
-imob_kin_ic(:,round(240/x_scale):round(400/x_scale),1:round(66/y_scale),ii) = 0;
-% imob_kin_formula{ii} = 'Orgcsed -1.0 Orgc 1.0 ';
-imob_kin_formula{ii} = 'Orgcsed -1.0 CH2O 1.0 ';
-if fl_Orgcsource
-    ii = ii+1; imob_kin_comp{ii} = 'Orgcsource'; % ********   
-    imob_kin_par(1:length(Orgcsource_log10K),ii) = 10.^Orgcsource_log10K;
-    imob_kin_ic(:,:,:,ii) = Orgcsource_conc_ic; 
-    imob_kin_ic(:,1:round(160/x_scale),1:round(66/y_scale),ii) = 0;
-    imob_kin_ic(:,round(160/x_scale):round(240/x_scale),1:round(88/y_scale),ii) = 0;
-    imob_kin_ic(:,round(240/x_scale):round(400/x_scale),1:round(66/y_scale),ii) = 0;
-    imob_kin_formula{ii} = 'Orgcsource -1.0 Orgcsed 1.0 ';
-end
-n_imob_kin = ii;
-imob_kin_comp = imob_kin_comp(1:n_imob_kin);
-imob_kin_ic = imob_kin_ic(:,:,:,1:n_imob_kin); 
-
-% - mineral eq components (ic specified below)
-% (already set in INPUT section)
-
-% - catex components (catex_exch is exchanger site)
-% (already set in INPUT section)
-
-% - surface complexation components
-% (already set in INPUT section)
-
-% - mineral kinetic components
-n_min_kin_max = 10;
-min_kin_comp = cell(n_min_kin_max,1);
-min_kin_ic = zeros(nrow,ncol,nlay,n_min_kin_max); 
-min_kin_par = zeros(1,n_min_kin_max); 
-ii = 0;
-n_min_kin = ii;
-min_kin_comp = min_kin_comp(1:n_min_kin);
-min_kin_ic = min_kin_ic(:,:,:,1:n_min_kin); 
-min_kin_par = min_kin_par(1,1:n_min_kin); 
-
-
-% 2D) CREATE INPUT FILES
-
-% -- create btn, ssm, and disp files 
-eff_por = ones(nrow,ncol,nlay) * por;
-PHT3D_btn_f_051715a(btn_file, ssm_file, dsp_file, ...
-    nrow, ncol, nlay, DELR, DELC, htop, dz, eff_por, ...
-    long_disp, hor2longdisp, vert2longdisp, Dstar, ...
-    mob_kin_comp, mob_kin_ic, ...
-    mob_eq_comp, mob_eq_ic, fl_mob_eq_const_rech, mob_eq_const_rech, mob_eq_distr_rech, ...
-    imob_kin_comp, imob_kin_ic, ...
-    min_eq_comp, min_eq_ic, ...
-    catex_comp, catex_ic, ...
-    surf_comp, surf_ic, ...
-    timprs, nstp, fl_rech);    
-
 
 % -- Create nam file
 fid = fopen(nam_fil, 'wt');
@@ -476,11 +410,352 @@ fprintf(fid, '        10       500         1         0\n');
 fprintf(fid, '         1    .00001         0\n');
 fclose(fid);
 
+if ctr==1
 
-% -- create _ph file (this added to handle alkalinity)
-fl_catex_toequil = 1;
-PHT3D_ph_f_general4(ph_file, ...
-    tempC, ...
+% -- SET INITIAL MODEL CHEMISTRY FOR BTN FILE
+% (Units -- aq: mol/L_w, user-defined immob (e.g. bacteria, napl): mol/L_w, 
+% minerals (and gases?): mol/L_v, exchangers and surfaces: mol/L_v)
+
+% - mobile kinetic components
+n_mob_kin_max = 10;
+mob_kin_comp = cell(n_mob_kin_max,1);
+mob_kin_ic = zeros(nrow,ncol,nlay,n_mob_kin_max);
+mob_kin_par = nan(n_par_max, n_mob_kin_max);
+mob_kin_formula = cell(n_mob_kin_max,1);
+ii = 0;
+% ii=ii+1; mob_kin_comp{ii} = 'Orgc'; % *************************************
+% mob_kin_par(1:length(Orgc_log10K),ii) = 10.^Orgc_log10K;
+% mob_kin_ic(:,:,1:50,ii) = 0;
+% mob_kin_ic(:,:,51:end,ii) = 0;
+% 
+% mob_kin_formula{ii} = 'Orgc -1.0 CH2O 1.0 ';
+n_mob_kin = ii;
+mob_kin_comp = mob_kin_comp(1:n_mob_kin);
+mob_kin_ic = mob_kin_ic(:,:,:,1:n_mob_kin);  
+
+% - mobile equil components
+n_mob_eq_max = 50;
+mob_eq_comp = cell(n_mob_eq_max,1);
+% - (ic from SC_InitCond_chem.m)    
+mob_eq_ic = zeros(nrow,ncol,nlay,n_mob_eq_max);
+% - (constant conc bc, not recharge conc bc)
+fl_mob_eq_const_rech = ones(n_mob_eq_max,1); % default cont rech
+mob_eq_const_rech = zeros(n_mob_eq_max,1);    
+mob_eq_distr_rech = zeros(nrow,ncol,n_mob_eq_max); 
+mob_eq_extra = cell(n_mob_eq_max,1);
+ii = 0;
+% ii=ii+1; mob_eq_comp{ii} = 'Al'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 0;
+% ii=ii+1; mob_eq_comp{ii} = 'B'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 0;
+%ii=ii+1; mob_eq_comp{ii} = 'H(1)'; % ***********************************
+ii=ii+1; mob_eq_comp{ii} = 'As(3)'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 0;
+ii=ii+1; mob_eq_comp{ii} = 'As(5)'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 0;
+ii=ii+1; mob_eq_comp{ii} = 'C(4)'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 0;
+%ii=ii+1; mob_eq_comp{ii} = 'C(-4)'; % ***********************************
+ii=ii+1; mob_eq_comp{ii} = 'Ca'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 21; % mg/L
+ii=ii+1; mob_eq_comp{ii} = 'Cl'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 2.42; % mg/L
+%            mob_eq_extra{ii} = 'charge';
+ii=ii+1; mob_eq_comp{ii} = 'Fe(2)'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 8.9; % mg/L
+ii=ii+1; mob_eq_comp{ii} = 'Fe(3)'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 8.9; % mg/L
+ii=ii+1; mob_eq_comp{ii} = 'K'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 2.89; % mg/L
+ii=ii+1; mob_eq_comp{ii} = 'Mg'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 21.1; % mg/L
+ii=ii+1; mob_eq_comp{ii} = 'Mn(2)'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 3.29; % mg/L
+% ii=ii+1; mob_eq_comp{ii} = 'N'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 1.35; % mg/L
+% ii=ii+1; mob_eq_comp{ii} = 'N(5)'; % ***********************************
+% ii=ii+1; mob_eq_comp{ii} = 'N(0)'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 0;
+ii=ii+1; mob_eq_comp{ii} = 'Amm'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 0;
+ii=ii+1; mob_eq_comp{ii} = 'Na'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 6.89; % mg/L
+%if ~fl_NoChargeBal
+%          mob_eq_extra{ii} = 'charge';
+%end
+ii=ii+1; mob_eq_comp{ii} = 'O(0)'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 0;
+ii=ii+1; mob_eq_comp{ii} = 'P'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 0.2; % mg/L
+% ii=ii+1; mob_eq_comp{ii} = 'S(-2)'; % ***********************************
+% % mob_eq_ic(:,:,:,ii) = 0.067; % mg/L
+ii=ii+1; mob_eq_comp{ii} = 'S(6)'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 26.6; % mg/L
+ii=ii+1; mob_eq_comp{ii} = 'S(-2)'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 26.6; % mg/L
+ii=ii+1; mob_eq_comp{ii} = 'Si'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 46.3; % mg/L
+ii=ii+1; mob_eq_comp{ii} = 'N(5)'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 0;
+ii=ii+1; mob_eq_comp{ii} = 'N(3)'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 0;
+ii=ii+1; mob_eq_comp{ii} = 'N(0)'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 0;
+ii=ii+1; mob_eq_comp{ii} = 'pH'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 6.92;
+ii=ii+1; mob_eq_comp{ii} = 'pe'; % ***********************************
+% mob_eq_ic(:,:,:,ii) = 0;
+% ii=ii+1; mob_eq_comp{ii} = 'Orgc'; % ***********************************
+n_mob_eq = ii;
+mob_eq_comp = mob_eq_comp(1:n_mob_eq);
+mob_eq_ic = mob_eq_ic(:,:,:,1:n_mob_eq);
+mob_eq_const_rech = mob_eq_const_rech(1:n_mob_eq);
+mob_eq_distr_rech = mob_eq_distr_rech(:,:,1:n_mob_eq);
+mob_eq_extra = mob_eq_extra(1:n_mob_eq);
+
+% - immobile kinetic components
+n_imob_kin_max = 10;
+imob_kin_comp = cell(n_imob_kin_max,1);
+imob_kin_ic = zeros(nrow,ncol,nlay,n_imob_kin_max); 
+imob_kin_par = nan(n_par_max, n_mob_kin_max);
+imob_kin_formula = cell(n_mob_kin_max,1);
+ii = 0;
+ii = ii+1; imob_kin_comp{ii} = 'Orgcsed'; % ********     
+imob_kin_par(1:length(Orgcsed_log10K),ii) = 10.^Orgcsed_log10K;
+imob_kin_ic(:,:,1:100,ii) = hi_Orgcsed;
+imob_kin_ic(:,:,101:200,ii) = 0;
+
+% imob_kin_formula{ii} = 'Orgcsed -1.0 Orgc 1.0 ';  %For ever 1 mol
+% %orgcsed, get 1 mol Orgc
+imob_kin_formula{ii} = 'Orgcsed -1.0 CH2O 1.0 ';
+
+% ii = ii+1; imob_kin_comp{ii} = 'Arsenopyrite'; % ********     
+% imob_kin_par(1:length(Orgcsed_log10K),ii) = 10.^Orgcsed_log10K;
+% imob_kin_ic(:,:,1:50,ii) = 1e-6*rho_b;
+% imob_kin_ic(:,:,51:100,ii) = 0;
+
+% imob_kin_formula{ii} = 'Arsenopyrite -1.0 Fe+2 1.0 As+3 0.008 SO4-2 1.0 ';
+
+% ii = ii+1; imob_kin_comp{ii} = 'Pyrite'; % ********     
+% imob_kin_par(1:length(Pyrite_log10K),ii) = 10.^Pyrite_log10K;
+% imob_kin_ic(:,:,1:50,ii) = 1e-6;
+% imob_kin_ic(:,:,51:100,ii) = 0;
+% imob_kin_formula{ii} = 'Pyrite -1.0 Fe+2 1.0 SO4-2 2.0 ';
+
+n_imob_kin = ii;
+imob_kin_comp = imob_kin_comp(1:n_imob_kin);
+imob_kin_ic = imob_kin_ic(:,:,:,1:n_imob_kin); 
+
+% - mineral eq components (ic specified below)
+n_min_eq_max = 10;
+min_eq_comp = cell(n_min_eq_max,1);
+min_eq_ic = zeros(nrow,ncol,nlay,n_min_eq_max); 
+ii = 0;
+ii=ii+1; min_eq_comp{ii} = 'Orpiment'; % **********************************
+    min_eq_ic(:,:,1:100,ii) = 1.03e-20; % (mol/Lv)
+ii=ii+1; min_eq_comp{ii} = 'Arsenopyrite'; % ******************************
+    min_eq_ic(:,:,1:100,ii) = 6.23e-20; % (mol/Lv)
+ii=ii+1; min_eq_comp{ii} = 'Fe(OH)3(a)'; % ********************************
+    min_eq_ic(:,:,101:200,ii) = 6.23e-5; % (mol/Lv)
+% ii=ii+1; min_eq_comp{ii} = 'Gypsum'; % ************************************
+% min_eq_ic(:,:,51:100,ii) = 1e-6*rho_b; % (mol/Lv)
+% ii=ii+1; min_eq_comp{ii} = 'Pyrite'; % ************************************
+% min_eq_ic(:,:,1:50,ii) = 1e-6*rho_b; % (mol/Lv)
+% ii=ii+1; min_eq_comp{ii} = 'Calite'; % ************************************
+% min_eq_ic(:,:,51:100,ii) = 1e-20*rho_b; % (mol/Lv)  <-- DO NOT add
+% calcite into AsMn model.  Causes model to crash due to charge imbalance.  
+% ii=ii+1; min_eq_comp{ii} = 'Gibbsite'; % **********************************
+% min_eq_ic(:,:,:,ii) = 30e-6*rho_b; % (mol/Lv)
+ %ii=ii+1; min_eq_comp{ii} = 'Goethite'; % **********************************
+ %min_eq_ic(:,:,:,ii) = 50e-6*rho_b; % (mol/Lv)
+% ii=ii+1; min_eq_comp{ii} = 'Pyrolusite'; % ********************************
+% min_eq_ic(:,:,:,ii) = .25e-6*rho_b;  % 
+% ii=ii+1; min_eq_comp{ii} = 'Siderite'; % **********************************
+% min_eq_ic(:,:,:,ii) = 1e-6*rho_b; % (mol/Lv)
+% ii=ii+1; min_eq_comp{ii} = 'Rhodochrosite'; % *****************************
+% min_eq_ic(:,:,:,ii) = 1e-6*rho_b; % (mol/Lv)
+% ii=ii+1; min_eq_comp{ii} = 'FeS(ppt)'; % **********************************
+% min_eq_ic(:,:,1:50,ii) = 1e-6*rho_b; % (mol/Lv)
+% ii=ii+1; min_eq_comp{ii} = 'Mackinawite'; % *******************************
+% min_eq_ic(:,:,1:50,ii) = 1e-6*rho_b; % (mol/Lv)
+% ii=ii+1; min_eq_comp{ii} = 'Hydroxyapatite'; % ****************************
+% min_eq_ic(:,:,51:100,ii) = 1e-6*rho_b; % (mol/Lv)
+% ii=ii+1; min_eq_comp{ii} = 'Hematite'; % **********************************
+% min_eq_ic(:,:,51:100,ii) = 1e-6*rho_b; % (mol/Lv)
+% ii=ii+1; min_eq_comp{ii} = 'Vivianite'; % *********************************
+% min_eq_ic(:,:,51:100,ii) = 1e-6*rho_b; % (mol/Lv)
+n_min_eq = ii;
+min_eq_comp = min_eq_comp(1:n_min_eq);
+min_eq_ic = min_eq_ic(:,:,:,1:n_min_eq); 
+
+% - catex components (catex_exch is exchanger site)
+n_catex_exch_max = 10;
+catex_exch_comp = cell(n_catex_exch_max,1);
+catex_exch_ic = zeros(nrow,ncol,nlay,n_catex_exch_max); 
+ii = 0;
+if fl_Yexch
+    ii=ii+1; catex_exch_comp{ii} = 'Y'; % ***********************************
+    catex_exch_ic(:,:,:,ii) = 0.020725*por;  % Doug's xls "Sorption Notes" mol/L_w, email 4/12/13
+end
+n_catex_exch = ii;
+catex_exch_comp = catex_exch_comp(1:n_catex_exch);
+catex_exch_ic = catex_exch_ic(:,:,:,1:n_catex_exch); 
+
+% - catex components (catex is exchanger sorbed compound)
+% (ic from PHREEQC batch run)
+n_catex_max = 10;
+catex_comp = cell(n_catex_max,1);
+catex_ic = zeros(nrow,ncol,nlay,n_catex_max); 
+ii = 0;
+if fl_Yexch
+    ii=ii+1; catex_comp{ii} = 'HY'; % ***********************************
+    ii=ii+1; catex_comp{ii} = 'NaY'; % ***********************************
+    ii=ii+1; catex_comp{ii} = 'KY'; % ***********************************
+    ii=ii+1; catex_comp{ii} = 'AmmHY'; % ***********************************
+    ii=ii+1; catex_comp{ii} = 'CaY2'; % ***********************************
+    ii=ii+1; catex_comp{ii} = 'MgY2'; % ***********************************
+    ii=ii+1; catex_comp{ii} = 'FeY2'; % ***********************************
+    ii=ii+1; catex_comp{ii} = 'MnY2'; % ***********************************
+%     ii=ii+1; catex_comp{ii} = 'SrY2'; % ***********************************
+%     ii=ii+1; catex_comp{ii} = 'BaY2'; % ***********************************
+end
+n_catex = ii;
+catex_comp = catex_comp(1:n_catex);
+catex_ic = catex_ic(:,:,:,1:n_catex);
+
+% - surface complexation components
+% **** WARNING: not set up for surfaces w/
+%               multiple sites (would need to enter only 1 surf_calc_type
+%               per surface in _ph file)
+n_surf_max = 10;
+surf_comp = cell(n_surf_max,1);
+% surf_ic: number of sites [mol/Lv] if not coupled to phase or reactant,
+%          (number of sites per mol x porosity) [mol/mol] if coupled
+surf_ic = zeros(nrow,ncol,nlay,n_surf_max); 
+% surf_par(1,ii): SurfArea ([m2/g] if not coupled to phase or reactant,
+%              [m2/mol] if coupled to phase or reactant)
+% surf_par(2,ii): mass ([g/L] if not coupled to phase or reactant,
+%              include but ignored if coupled to phase or reactant)
+surf_par = zeros(2,n_surf_max); 
+% surf_cpl{1,ii}: Empty if not coupled to phase or reactant
+% surf_cpl{1,ii}: Name of pure phase or kin reactant coupled to
+% surf_cpl{2,ii}: 'equilibrium_phase' to couple to pure phase, or
+%                    'kinetic_reactant' to couple to kinetic reactant
+surf_cpl = cell(2,n_surf_max); 
+surf_calc_type = ''; % must have same type for all surfaces, 3 options: '', '-no_edl', 'diffuse_layer'
+ii = 0;
+% 6/6/16: 
+% Arsenic_Lakes_parameter_calcs_20160528_dbk_corrected_gcngnotes.xlsx
+% ("Sorption" tab)
+ii=ii+1; surf_comp{ii} = 'Hfo_wOH'; % ***********************************
+surf_ic(:,:,:,ii) = 0.2*por;  % number of sites, [mol/mol]*por if coupled
+surf_par(1,ii) = 1243.5/0.004665;  % SurfArea ([m2/mol] if coupled to phase or reactant)
+surf_par(2,ii) = 4145;  % mass ([g/L] if not coupled to phase or reactant,
+%              include but ignored if coupled to phase or reactant)
+surf_cpl{1,ii} = 'Fe(OH)3(a)';
+surf_cpl{2,ii} = 'equilibrium_phase';
+ii=ii+1; surf_comp{ii} = 'Hfo_sOH'; % ***********************************
+surf_ic(:,:,:,ii) = 0.005*por;  % number of sites, [mol/mol]*por if coupled
+surf_par(1,ii) = 1243.5/0.00012;  % SurfArea ([m2/mol] if coupled to phase or reactant)
+surf_par(2,ii) = 4145;  % mass ([g/L] if not coupled to phase or reactant,
+%              include but ignored if coupled to phase or reactant)
+surf_cpl{1,ii} = 'Fe(OH)3(a)';
+surf_cpl{2,ii} = 'equilibrium_phase';  
+
+n_surf = ii;
+surf_comp = surf_comp(1:n_surf);
+surf_ic = surf_ic(:,:,:,1:n_surf); 
+surf_par = surf_par(:,1:n_surf); 
+
+% - mineral kinetic components
+n_min_kin_max = 10;
+min_kin_comp = cell(n_min_kin_max,1);
+min_kin_ic = zeros(nrow,ncol,nlay,n_min_kin_max); 
+min_kin_par = zeros(1,n_min_kin_max); 
+ii = 0;
+n_min_kin = ii;
+min_kin_comp = min_kin_comp(1:n_min_kin);
+min_kin_ic = min_kin_ic(:,:,:,1:n_min_kin); 
+min_kin_par = min_kin_par(1,1:n_min_kin); 
+
+n_comp_all = [n_mob_kin; n_mob_eq; n_imob_kin; n_min_eq; n_catex; n_surf];
+
+% -- (done setting model chemical components)
+
+
+% - select output list
+phrq_sel_outlist.total = [mob_kin_comp; mob_eq_comp(~strncmp('p',mob_eq_comp,1)); imob_kin_comp];
+phrq_sel_outlist.mol = [catex_comp; surf_comp];
+phrq_sel_outlist.equilphase = min_eq_comp;
+phrq_sel_outlist.si = []; phrq_sel_outlist.gas = [];    
+
+sel_outlist.total = [mob_kin_comp; mob_eq_comp(~strncmp('p',mob_eq_comp,1)); imob_kin_comp];
+sel_outlist.mol = catex_comp;  % better to put desired surf species in add_sel_outlist.mol
+% sel_outlist.mol = [catex_comp; surf_comp];
+sel_outlist.equilphase = min_eq_comp;
+% sel_outlist.si = {'FeS(ppt)'}; 
+sel_outlist.si = {'Fe(OH)3(a)'};
+% sel_outlist.si = {'Pyrite'};
+% sel_outlist.si = []; 
+sel_outlist.gas = []; 
+% sel_outlist.si = {'CH4(g)', 'CO2(g)', 'Ntwo(g)', 'O2(g)'}; 
+% sel_outlist.gas = {'CH4(g)', 'CO2(g)', 'Ntwo(g)', 'O2(g)'}; 
+
+% iunclude any additional components
+sel_outlist.total = [sel_outlist.total; addl_sel_outlist.total(:)];
+sel_outlist.mol = [sel_outlist.mol; addl_sel_outlist.mol(:)];
+sel_outlist.equilphase = [sel_outlist.equilphase; addl_sel_outlist.equilphase(:)];
+sel_outlist.si = [sel_outlist.si; addl_sel_outlist.si(:)]; 
+sel_outlist.gas = [sel_outlist.gas; addl_sel_outlist.gas(:)]; 
+
+
+% -- Get initial conditions: equilibrated and charge-balanced solutions
+% based on observations:
+
+%         [mob_eq_comp_ic, mob_eq_sw_ic, mob_eq_pw_ic, catex_comp_ic, catex_pw_ic, surf_sp_comp_ic, surf_sp_pw_ic] = ...
+%             As_InitCond_chem_3_gcng_AJD_combined_8N14E_Lake(sim_dir, phrq_exe, tempC, fl_Yexch);
+%         [mob_eq_comp_ic, mob_eq_sw_ic, mob_eq_pw_ic, catex_comp_ic, catex_pw_ic, surf_sp_comp_ic, surf_sp_pw_ic] = ...
+%             As_InitCond_chem_3_gcng_AJD_combined(sim_dir, phrq_exe, tempC_eq, fl_Yexch);
+        [mob_eq_comp_ic, mob_eq_sw_ic, mob_eq_pw_ic, catex_comp_ic, catex_pw_ic, surf_sp_comp_ic, surf_sp_pw_ic] = ...
+           As_InitCond_chem_4_testmodel_hi_lo_As_test4(sim_dir, phrq_exe, tempC_eq, fl_Yexch);
+
+        for ii = 1: n_mob_eq
+            ind = find(strcmp(mob_eq_comp(ii), mob_eq_comp_ic));
+        %     mob_eq_const_rech(ii) = mob_eq_sw_ic(ind);
+            mob_eq_ic(:,:,1:100,ii) = mob_eq_sw_ic(ind);  % BC
+                    % mob_eq_ic(:,:,1:38,ii) = mob_eq_sw_ic(ind); % BC
+                    % mob_eq_ic(:,:,43:44,ii) = mob_eq_sw_ic(ind);
+                    % mob_eq_ic(:,:,63:64,ii) = mob_eq_sw_ic(ind);
+                    % mob_eq_ic(:,:,67:80,ii) = mob_eq_sw_ic(ind);
+                    % mob_eq_ic(:,:,87:120,ii) = mob_eq_sw_ic(ind);
+        %     mob_eq_ic(:,:,2:end,ii) = mob_eq_sw_ic(ind); % **** CHANGE THIS BACK TO PW!!! ******
+        %     mob_eq_ic(:,:,1,ii) = mob_eq_pw_ic(ind); % **** CHANGE THIS BACK TO SW!!! ******
+            mob_eq_ic(:,:,101:end,ii) = mob_eq_pw_ic(ind);    
+                    % mob_eq_ic(:,:,39:42,ii) = mob_eq_pw_ic(ind);
+                    % mob_eq_ic(:,:,45:62,ii) = mob_eq_pw_ic(ind);
+                    % mob_eq_ic(:,:,65:66,ii) = mob_eq_pw_ic(ind);
+                    % mob_eq_ic(:,:,81:86,ii) = mob_eq_pw_ic(ind);
+        end
+        for ii = 1: n_catex  % cation exchange components (sorption)
+            % - Surface boundary: no cation exchangers in sw
+            % - Middle bulk of domain
+            ind = find(strcmp(catex_comp(ii), catex_comp_ic));
+            catex_ic(:,:,2:end,ii) = catex_pw_ic(ind); 
+        %     % - Bottom boundary
+        %     if ~isempty(ind_pwgw)
+        %         catex_ic(:,:,ind_pwgw:end,ii) = catex_ic_z(3,ii);                  
+        end
+else
+    % for ctr > 1, only change Orgc parameters
+    ii = strcmp(mob_kin_comp, 'Orgc');
+    mob_kin_par(1:length(Orgc_log10K), ii) = 10.^Orgc_log10K;
+    
+end
+             
+% create _ph file (this added to handle alkalinity)
+fl_catex_toequil = zeros(n_catex); % 0 b/c already equilibrated exchanger
+PHT3D_ph_f_general6(ph_file, ...
+    OperSplit, tempC_eq, ...
     mob_kin_comp, mob_kin_par, mob_kin_formula, ...
     mob_eq_comp, mob_eq_extra, ...
     imob_kin_comp, imob_kin_par, imob_kin_formula, ...
@@ -489,26 +764,21 @@ PHT3D_ph_f_general4(ph_file, ...
     surf_comp, surf_par, surf_cpl, surf_calc_type, ...
     min_kin_comp, min_kin_par)
 
+% create btn, ssm, and disp files 
+fl_rech = 0;
+eff_por = ones(nrow,ncol,nlay) * por;
+PHT3D_btn_f_160608a(btn_file, ssm_file, dsp_file, ...
+    nrow, ncol, nlay, DELR, DELC, htop, dz, eff_por, ...
+    long_disp, hor2longdisp, vert2longdisp, Dstar, ...
+    mob_kin_comp, mob_kin_ic, ...
+    mob_eq_comp, mob_eq_ic, fl_mob_eq_const_rech, mob_eq_const_rech, mob_eq_distr_rech, ...
+    imob_kin_comp, imob_kin_ic, ...
+    min_eq_comp, min_eq_ic, ...
+    catex_comp, catex_ic, ...
+    surf_comp, surf_ic, ...
+    timprs, nstp, fl_rech);    
 
-% -- create postfix file (what to output to .sel file)
-% - select output list
-sel_outlist.total = [mob_kin_comp; mob_eq_comp(~strncmp('p',mob_eq_comp,1)); imob_kin_comp];
-sel_outlist.mol = catex_comp;  % better to put desired surf species in add_sel_outlist.mol
-% sel_outlist.mol = [catex_comp; surf_comp];
-sel_outlist.equilphase = min_eq_comp;
-sel_outlist.si = {'Siderite', 'FeS(ppt)'}; 
-% sel_outlist.si = []; 
-sel_outlist.gas = []; 
-% sel_outlist.si = {'CH4(g)', 'CO2(g)', 'Ntwo(g)', 'O2(g)'}; 
-% sel_outlist.gas = {'CH4(g)', 'CO2(g)', 'Ntwo(g)', 'O2(g)'}; 
-
-% include any additional components
-sel_outlist.total = [sel_outlist.total; addl_sel_outlist.total(:)];
-sel_outlist.mol = [sel_outlist.mol; addl_sel_outlist.mol(:)];
-sel_outlist.equilphase = [sel_outlist.equilphase; addl_sel_outlist.equilphase(:)];
-sel_outlist.si = [sel_outlist.si; addl_sel_outlist.si(:)]; 
-sel_outlist.gas = [sel_outlist.gas; addl_sel_outlist.gas(:)]; 
-
+% create postfix file (what to output to .sel file)
 postfix_fil = [sim_dir, 'postfix.phrq'];
 fid = fopen(postfix_fil, 'wt');
 fprintf(fid, 'SELECTED_OUTPUT \n');
@@ -554,7 +824,7 @@ if ~isempty(sel_outlist.gas)
 end
 fprintf(fid, 'END\n');
 
-%% ------------------------------------------------------------------------
+
 % run simulation
 
 if isunix
@@ -570,9 +840,177 @@ else
 end
 fprintf('\n');
 
+% -- Check if model crashed!!
+phout_fil = [sim_dir, slashstr, 'phout.dat'];
+fid = fopen(phout_fil);
+while(~feof(fid))
+    str = fgets(fid);
+end
+fclose(fid);
+if strncmp(str, 'Stopping.', 9);
+    % model did not complete
+    fprintf('Model did not complete, redo with different charge balance \n');
+    fl_ReDo = 1;
+    Na_ind = find(strcmp(mob_eq_comp, 'Na'),1);
+    Cl_ind = find(strcmp(mob_eq_comp, 'Cl'),1);
+    ind = find(strcmp(mob_eq_extra, 'charge'));
+    if ind == Na_ind
+        mob_eq_extra{Na_ind} = '';
+        mob_eq_extra{Cl_ind} = 'charge';
+    elseif ind == Cl_ind
+        mob_eq_extra{Cl_ind} = '';
+        mob_eq_extra{Na_ind} = 'charge';        
+    else
+        fprintf('  ...but charge component is neither Cl nor Na. Stopping...\n');
+        return
+    end
+else
+    
+    % did not crash, continue...
+    fl_ReDo = 0;
+
+
+           %**********OBTAINING NEW INIT COND***************            
+
+    % n_comp_all = [n_mob_kin; n_mob_eq; n_imob_kin; n_min_eq; n_catex]; % old version
+
+    comp_ctr=0;
+
+        for cc = 1: 6
+            dist_ic = zeros(nrow,ncol,nlay,n_comp_all(cc));
+            switch cc
+                case 1
+                    comp_name_i = mob_kin_comp;
+                case 2
+                    comp_name_i = mob_eq_comp;
+                case 3
+                    comp_name_i = imob_kin_comp;
+                case 4
+                    comp_name_i = min_eq_comp;
+                case 5
+                    comp_name_i = catex_comp;
+                case 6 
+                    comp_name_i = surf_comp;
+
+            end 
+
+                    for ss = 1: n_comp_all(cc)
+                comp_ctr = comp_ctr + 1;
+
+                if comp_ctr >= 100
+                    numstr = num2str(comp_ctr);
+                elseif comp_ctr >= 10
+                    numstr = [ '0', num2str(comp_ctr)];
+                else
+                    numstr = [ '00', num2str(comp_ctr)];
+                end
+                fil = ['PHT3D', numstr, '.ACN'];
+    %             [status, result] = system(['dir C:\Users\Owner\Desktop\Arsenic_MN\Test_Models\As_into_Model_20160611\', fil]); 
+    %             if status ~= 0
+    %                 fprintf('No .ACN file found for %s!  Exiting... \n', comp_name_i{ss});
+    %                 return
+    %             end
+                x = load(fil);
+                tmax = length(x)/(ncol*nrow*nlay);
+                data = reshape(x, ncol, nrow, nlay, tmax);  % (ncol,nrow,nlay,ntime);
+                %take final time
+                data = data(:,:,:,end);            
+
+                dist_ic(:,:,:,ss) = permute(data, [2 1 3]); % (nrow,ncol,nlay,n_comp);
+    %             dist_ic(:,:,1,ss) = dist_ic(:,:,2,ss);
+                    end
+
+            switch cc
+                case 1
+                    mob_kin_ic = dist_ic;
+                case 2
+                    mob_eq_ic = dist_ic;
+                case 3
+                    imob_kin_ic = dist_ic;
+                case 4
+                    min_eq_ic = dist_ic;
+                case 5
+                    catex_ic = dist_ic;
+                case 6
+                    surf_ic = dist_ic;
+            end
+        end
+
+    newname=['out_X',num2str(ctr),'.sel'];
+
+    copyfile('out_X.sel', newname)
+
+        newname1 = ['pht3dbtn_1D_', num2str(ctr), '.dat'];
+
+        copyfile('pht3dbtn_1D.dat', newname1)
+
+            newname2=['pht3d_ph_', num2str(ctr), '.dat'];
+
+            copyfile('pht3d_ph.dat', newname2)
+    if fl_gcng, system(['cp -p out.txt out_', num2str(ctr), '.txt']); end
+
+
+        %*************CONCATENATING .SEL FILES******************    
+
+    fclose('all');    
+
+    %  % - read in data
+    outfile = ['out_X',num2str(ctr),'.sel'];
+
+    % formatSpec = '%f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f';
+
+    ndatalines = length(find(timprs>0)) * (nlay-1); % does not write time=0 nor constant conc BC cells
+
+    if ctr==1
+
+    fid = fopen(outfile);    
+    %     line0 = fscanf(fid, '%c', [1 462]); %reads in column titles
+        line0 = fgets(fid); %reads in first line with column titles
+        col_ti = textscan(line0, '%s'); 
+        col_ti = col_ti{1};
+        n_col_ti = length(col_ti);
+        formatSpec = repmat('%f ', 1, n_col_ti);
+        data1 = cell2mat(textscan(fid, formatSpec, ndatalines)); %reads in data
+    fclose(fid);
+
+    fid1 = fopen('out_Xfinal.sel', 'w');  
+        fprintf(fid1, '%s', line0);    
+    %     fprintf(fid1, '%f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f \n\r', data1');
+        fmtstr = repmat('%12g ', 1, n_col_ti);
+        fprintf(fid1, [fmtstr, '\n'], data1');
+        fclose(fid1);
+
+
+    elseif ctr >1
+
+
+       %Array used to make time sequential for 50 layer model run for 180 days
+    %    tim = ones(294,1);
+    %    ntim = 15552000.*tim.*(ctr-1);
+
+       %Array used to make time sequential for 200 layer model run for 180 days
+       tim = ones(ndatalines,1);
+    %    ntim = 15552000.*tim.*(ctr-1);   
+       ntim = (timprs(end)*3600*24).*tim.*(ctr-1);   
+
+    fid = fopen(outfile);
+       data2 = cell2mat(textscan(fid, formatSpec, ndatalines, 'headerLines', 1)); %reads in data
+       data2 = [data2(1:end,1)+ntim, data2(1:end,2:end)]; %Reformats matrix with the correct time
+    fclose(fid);
+
+    fid1 = fopen('out_Xfinal.sel', 'a'); 
+    %     fprintf(fid1, '%f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f %f \n\r', data2');
+        fprintf(fid1, [fmtstr, '\n'], data2');
+        fclose(fid1);   
+    end
+end            
+if ctr==end_ctr
+    return
+end 
+end
+ 
+fclose('all');
 
 cd(curr_dir);
 
 rmpath(matlab_dir);
-
-
